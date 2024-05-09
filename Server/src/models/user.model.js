@@ -26,8 +26,9 @@ const userSchema= new mongoose.Schema(
             type:String,
 
         },
-        coverImage:{
+        logo:{
             type:String, //cloudinary url
+            required: true,
             
         }
     }
