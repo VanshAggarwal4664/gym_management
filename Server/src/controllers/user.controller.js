@@ -5,11 +5,13 @@ import User from "../models/user.model.js";
 import { uploadonCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { VerifyJWT } from "../middlewares/auth.middleware.js";
+import jwt from 'jsonwebtoken';
 
-const genrateRefreshandAccessToken= async (userId)=>{
+const genrateRefreshandAccessToken=  async (userId)=>{
   // iska naam tuser isliye diya h kyukki yeh user token genrate karne wale process ke liye bulaaya h taaki aage kisi se confusion na ho
   try {
-    const tuser=await User.findById({userId});
+    User.findById()
+    const tuser=await User.findById(userId);
     const refreshToken = tuser.genrateRefreshToken();
     const accessToken = tuser.genrateAccessToken();
     tuser.refreshToken=refreshToken;
@@ -90,7 +92,7 @@ const registerUser = asyncHandler( async(req , res) =>{
 
 })
 
-const loginUser=asyncHandler(async (req,res)=>{
+const loginUser = asyncHandler( async(req,res)=>{
   //login form se data le rahe h 
   const {username,password} = req.body
   // ab check kar rahe h khali to nahi 
@@ -104,13 +106,13 @@ const loginUser=asyncHandler(async (req,res)=>{
   if(!user){
     throw new ApiError(404, " User not Found")
   }
-  const isPasswordValid = await usercheck.isPasswordCorrect(password)
+  const isPasswordValid = await user.isPasswordCorrect(password)
 
   if(!isPasswordValid){
     throw new ApiError(400, "Password is incorrect")
   }
 
-  const {accessToken,refreshToken,tuser} = await genrateRefreshandAccessToken(user._id);
+  const {accessToken,refreshToken} = await genrateRefreshandAccessToken(user._id);
 
  //yeh hum isliye kar rahe kyuki hume refresh token wali value chahiye jo baad ma add hui h
  //do tareeko se kar sakte h first database call karlo wapis
@@ -130,8 +132,8 @@ const loginUser=asyncHandler(async (req,res)=>{
     httpOnly : true,
     secure : true
    }
-  //  cookie("accessToken",accessToken,options) first ki key second is value and last is option which we define earlier 
-   return res.status(200).Cookie()
+  //  cookie("accessToken",accessToken,options) first is key second is value and last is option which we define earlier 
+   return res.status(200)
    .cookie("accessToken",accessToken,options)
    .cookie("refreshToken",refreshToken,options)
    .json(
@@ -143,6 +145,7 @@ const loginUser=asyncHandler(async (req,res)=>{
 // user ko logout karne ke liye hume user chahiye hoga ki kisko logout karna h kyuki logout ke liye konsa hum form bharvate h
 // iske liye hum apna middleware likh rahe h jo hume user dega 
 const logoutUser=asyncHandler(async (req,res)=>{
+
      await User.findByIdAndUpdate(req.jwtuser._id,
       {
         $set: 
@@ -159,15 +162,53 @@ const logoutUser=asyncHandler(async (req,res)=>{
       }
     )
 
-    const options={
+  
+
+    const options = {
       httpOnly : true,
       secure : true
      }
 
-     return res.status(200)
-     .clearCookie(refreshToken)
-     .clearCookie(accessToken).json(new ApiResponse(200,{},"User Logged Out"))
+      return res.status(200)
+     .clearCookie("refreshToken",options)
+     .clearCookie("accessToken",options).json(new ApiResponse(200,{},"User Logged Out"))
 })
 
+const newAcessToken = asyncHandler(async (req,res)=>{
+   const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken;
 
-export {registerUser ,loginUser,logoutUser };
+   if(!incomingRefreshToken){
+    throw new ApiError(401," Unauthorized Request")
+   }
+  try {
+     const decodedToken = jwt.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET);
+  
+     const user= await User.findById(decodedToken?._id)
+     if(!user){
+      throw new ApiError(401,"invalid refresh token")
+     }
+  
+     if(incomingRefreshToken!==user.refreshToken){
+      throw new ApiError(401,"refresh token is expired or used")
+     }
+  
+     const {newAccessToken,newRefreshToken} = await genrateRefreshandAccessToken(user._id)
+     const options={
+      httpOnly : true,
+      secure : true
+     }
+    //  cookie("accessToken",accessToken,options) first is key second is value and last is option which we define earlier 
+     return res.status(200)
+     .cookie("accessToken",newAccessToken,options)
+     .cookie("refreshToken",newRefreshToken,options)
+     .json(
+      new ApiResponse(200,{user:user, accessToken: newAccessToken,refreshToken:newRefreshToken},"Token Regenrated successfully")
+     )
+  } catch (error) {
+    throw new ApiError(401 , error?.message||"invalid Token")
+  }
+   
+
+})
+
+export {registerUser ,loginUser,logoutUser,newAcessToken };
