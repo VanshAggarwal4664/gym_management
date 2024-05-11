@@ -4,7 +4,7 @@ import { ValidEmail } from "../utils/ValidEmail.js";
 import User from "../models/user.model.js";
 import { uploadonCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
-import { VerifyJWT } from "../middlewares/auth.middleware.js";
+// import { VerifyJWT } from "../middlewares/auth.middleware.js";
 import jwt from 'jsonwebtoken';
 
 const genrateRefreshandAccessToken=  async (userId)=>{
@@ -33,6 +33,7 @@ const registerUser = asyncHandler( async(req , res) =>{
         const {email,username ,password}=req.body;
 
   //images ka data manage karenge humne multer use kiya h to wo kuch or method add kar deta h "req" ma
+          
      const logoLocalPath = req.files?.logo[0]?.path  // multer ne hamare server pe upload kar diya h or uska path send kar raha h
 
      if(!logoLocalPath){
@@ -40,6 +41,16 @@ const registerUser = asyncHandler( async(req , res) =>{
      }
 
   // validation - hum yaha check karenge field empty or email ka format sahi h ya nahi
+
+//   The some() method returns true (and stops) if the function returns true for one of the array elements.
+
+// The some() method returns false if the function returns false for all of the array elements.
+
+// The trim() method removes whitespace from both sides of a string.
+
+// The trim() method does not change the original string.
+
+
    if([email,username,password].some((field)=>{
      return field?.trim()===""
    })){
@@ -211,4 +222,113 @@ const newAcessToken = asyncHandler(async (req,res)=>{
 
 })
 
-export {registerUser ,loginUser,logoutUser,newAcessToken };
+
+const changeCurrentPassword = asyncHandler(async(req,res)=>{
+
+    // password data lena padega hume
+    const{oldPassword,Newpassword,confirmPassword}=req.body;
+
+    // yaha check karengen ki koi field khali to nahi
+
+    if([oldPassword || Newpassword || confirmPassword].some((field)=>{
+      return field?.trim()===""
+    })){
+       throw new ApiError(400,"All fields are required")
+    }
+   // yaha check karenge ki new password or confirm password equal h ya nahi
+    if(!(Newpassword===confirmPassword)){
+        throw new ApiError(400,"new and confirm password should be equal");
+    }
+
+    // ab hum check karenge ki jo oldpassword aaya h wo database se match h ya nahi or is se pehle
+    // hum middleware call karvayenge verifyjwt wala is controller se pehle routes ma jis se verify ho jayega ki request sahi jagah se aa rahi h
+    //or middleware ek kaam yeh bhi karta h wo req.jwtuser ma user daal deta h to hum usi user ko use karenge
+
+    const user = await User.findById(req.jwtuser?._id)
+    // ab hum check karenge ki user ka password sahi h ya nahi wo bycrypt check karta h uske liye  
+   const isPasswordValid = await user.isPasswordCorrect(oldPassword)
+
+   if(!isPasswordValid){
+    throw new ApiError(400,"old Password is correct or wrong credentials")
+   }
+
+   // agar password sahi h then usko save karva do
+
+   user.password=Newpassword;
+   await user.save({validateBeforeSave:false});
+
+   return res.status(200).json(new ApiResponse(200,{},"Password Updated Successfully"));
+
+})
+
+const getCurrentUser= asyncHandler(async(req,res)=>{
+  return res.status(200).json(new ApiResponse(200,req.jwtuser,"current user fetched successfully"))
+})
+
+const updateUserDetails= asyncHandler(async(req,res)=>{
+     // pehle hume data lena hoga
+     const{username ,email} = req.body;
+
+     // ab check karna h khali to nahi fields  
+
+     if(!username || !email){
+      throw new ApiError(400,"all fields are required");
+     }
+     // email ka format check karenge
+
+     if(!ValidEmail(email)){
+      throw new ApiError(400, "Email Format is Incorrect")
+   }
+ 
+   // hum middleware call karvayenge verifyjwt wala isss controller se pehle routes wali file ma jis se verify ho jayega ki request sahi jagah se aa rahi h
+    //or middleware ek kaam yeh bhi karta h wo req.jwtuser ma user ki value daal deta h to hum usi user ko use karenge
+
+   const user= await User.findByIdAndUpdate(
+    req.jwtuser?._id,
+    {
+      $set:{username, email}
+    },
+    {
+      new:true
+    }
+  ).select("-password")
+
+    return res.status(200).json(new ApiResponse(200,user,"email and username updated successfully"))
+
+})
+
+const updateUserLogo= asyncHandler(async(req,res)=>{
+
+ //images ka data manage karenge humne multer use kiya h to wo kuch or method add kar deta h "req" ma
+          
+ const logoLocalPath = req.files?.logo[0]?.path  // multer ne hamare server pe upload kar diya h or uska path send kar raha h
+
+ if(!logoLocalPath){
+    throw new ApiError(400, " logo file is required")
+ }
+
+  const Logo= await uploadonCloudinary(logoLocalPath);
+
+  if(!Logo.url){
+    throw new ApiError(400,"erro while uploading on cloudinary")
+  }
+
+    // hum middleware call karvayenge verifyjwt wala isss controller se pehle routes wali file ma jis se verify ho jayega ki request sahi jagah se aa rahi h
+    //or middleware ek kaam yeh bhi karta h wo req.jwtuser ma user ki value daal deta h to hum usi user ko use karenge
+
+ const user= await User.findByIdAndUpdate(
+    req.jwtuser?._id,
+    {
+       $set:{logo:Logo.url}
+    },
+    {
+      new:true
+    }
+  ).select("-password")
+
+
+  return res.status(200).json(new ApiResponse(200,user,"Logo Image Updated Successfully"))
+})
+
+
+export {registerUser ,loginUser,logoutUser,newAcessToken,changeCurrentPassword,getCurrentUser,updateUserDetails,updateUserLogo};
